@@ -4,17 +4,17 @@ exports.handler = async function(event, context) {
   try {
     const { question } = JSON.parse(event.body);
     const apiKey = process.env.OPENAI_API_KEY;
-    const assistantId = process.env.OPENAI_ASSISTANT_ID;
 
-    if (!apiKey || !assistantId) {
+    if (!apiKey) {
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: 'OpenAI API key or Assistant ID is not set in environment variables.' })
+        body: JSON.stringify({ error: 'OpenAI API key is not set in environment variables.' })
       };
     }
 
-    const response = await axios.post('https://api.openai.com/v1/engines/davinci-codex/completions', {
-      prompt: question,
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo', // Ensure the model is compatible with the endpoint
+      messages: [{ role: 'user', content: question }],
       max_tokens: 150
     }, {
       headers: {
@@ -25,7 +25,7 @@ exports.handler = async function(event, context) {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ answer: response.data.choices[0].text.trim() })
+      body: JSON.stringify({ answer: response.data.choices[0].message.content.trim() })
     };
   } catch (error) {
     console.error('Error communicating with OpenAI API:', error.message);
