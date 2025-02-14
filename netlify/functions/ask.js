@@ -19,7 +19,8 @@ exports.handler = async function(event, context) {
     }, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'OpenAI-Beta': 'assistants=v2' // Include the beta HTTP header
       }
     });
 
