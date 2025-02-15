@@ -3,59 +3,53 @@ const axios = require('axios');
 exports.handler = async (event) => {
   try {
     if (event.httpMethod !== 'POST') {
-      return { statusCode: 405, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+      return { statusCode: 405, body: JSON.stringify({ error: 'Method Not Allowed' } });
     }
     const { user_message } = JSON.parse(event.body);
     if (!user_message) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'User message is required' }) };
+      return { statusCode: 400, body: JSON.stringify({ error: 'User message is required' } });
     }
 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
-
-    if (!OPENAI_API_KEY || !ASSISTANT_ID) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'Missing API key or Assistant ID' }) };
+    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY; // Use GOOGLE_API_KEY environment variable
+    if (!GOOGLE_API_KEY) {
+      return { statusCode: 500, body: JSON.stringify({ error: 'Missing Google API key' } });
     }
 
-    const API_URL = 'https://api.openai.com/v1/threads'; // Correct base URL for Assistants API
+    const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_API_KEY}`; // Gemini Pro endpoint
 
-    // Create a Thread
-    const threadResponse = await axios.post(
-      API_URL,
-      {}, // Empty body for thread creation
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
+    const response = await axios.post(
+      API_ENDPOINT,
+      {
+        contents: [
+          {
+            parts: [{ text: user_message }] // Gemini request format for text input
+          }
+        ]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
     );
-    const threadId = threadResponse.data.id;
-    if (!threadId) {
-      throw new Error("Failed to retrieve thread ID");
+
+    const generatedText = response.data.candidates?.[0]?.content?.parts?.[0]?.text; // Extract text from Gemini response
+
+    if (generatedText) {
+      return { statusCode: 200, body: JSON.stringify({ answer: generatedText }) };
+    } else {
+      return { statusCode: 200, body: JSON.stringify({ answer: "No response from Gemini Pro." }) };
     }
-
-    const MESSAGES_API_URL = `https://api.openai.com/v1/threads/${threadId}/messages`; // URL for messages in a thread
-
-    // Create a Message in the Thread
-    await axios.post(
-      MESSAGES_API_URL,
-      { role: 'user', content: user_message },
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
-    );
-
-    const RUNS_API_URL = `https://api.openai.com/v1/threads/${threadId}/runs`; // URL for runs in a thread
-
-    // Create a Run
-    const runResponse = await axios.post(
-      RUNS_API_URL,
-      { assistant_id: ASSISTANT_ID }, // Removed model: "gpt-4o-mini" - Assistant's model should be configured in OpenAI
-      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
-    );
-
-
-    return { statusCode: 200, body: JSON.stringify(runResponse.data) };
 
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error calling Gemini API:', error);
+    if (error.response) {
+      console.error("Status Code:", error.response.status);
+      console.error("Data:", error.response.data);
+    }
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Internal Server Error', details: error.message })
+      body: JSON.stringify({ error: 'Error communicating with Gemini API', details: error.message })
     };
   }
 };
