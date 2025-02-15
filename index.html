@@ -1,80 +1,13 @@
-const axios = require('axios');
-
-exports.handler = async (event) => {
-    try {
-        if (event.httpMethod !== 'POST') {
-            return {
-                statusCode: 405,
-                body: JSON.stringify({ error: 'Method Not Allowed' })
-            };
-        }
-
-        const { user_message } = JSON.parse(event.body);
-        if (!user_message) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ error: 'User message is required' })
-            };
-        }
-
-        const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-        const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
-        if (!OPENAI_API_KEY || !ASSISTANT_ID) {
-            return {
-                statusCode: 500,
-                body: JSON.stringify({ error: 'Missing API key or Assistant ID' })
-            };
-        }
-
-        const API_URL = 'https://api.openai.com/v2/threads';
-
-        const threadResponse = await axios.post(
-            API_URL,
-            {},
-            { 
-                headers: { 
-                    Authorization: `Bearer ${OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json' 
-                } 
-            }
-        );
-
-        const threadId = threadResponse.data.id;
-        if (!threadId) {
-            throw new Error("Failed to retrieve thread ID");
-        }
-
-        await axios.post(
-            `${API_URL}/${threadId}/messages`,
-            { role: 'user', content: user_message },
-            { 
-                headers: { 
-                    Authorization: `Bearer ${OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json' 
-                } 
-            }
-        );
-
-        const runResponse = await axios.post(
-            `${API_URL}/${threadId}/runs`,
-            { assistant_id: ASSISTANT_ID, model: "gpt-4o-mini" },
-            { 
-                headers: { 
-                    Authorization: `Bearer ${OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json' 
-                } 
-            }
-        );
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify(runResponse.data)
-        };
-    } catch (error) {
-        console.error('Error:', error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: 'Internal Server Error', details: error.message })
-        };
-    }
-};
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deputy Assistant</title>
+  <link rel="stylesheet" href="/src/index.css">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
