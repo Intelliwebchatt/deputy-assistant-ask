@@ -1,54 +1,61 @@
 const axios = require('axios');
 
-exports.handler = async function(event, context) {
+exports.handler = async (event) => {
   try {
-    const { question } = JSON.parse(event.body);
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'OpenAI API key is not set in environment variables.' })
-      };
+    if (event.httpMethod !== 'POST') {
+      return { statusCode: 405, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+    }
+    const { user_message } = JSON.parse(event.body);
+    if (!user_message) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'User message is required' }) };
     }
 
-    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-4o-mini', // Use the gpt-4o-mini model
-      messages: [{ role: 'user', content: question }],
-      max_tokens: 150 // Adjust as needed
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'OpenAI-Beta': 'assistants=v2' // Include the beta HTTP header
-      }
-    });
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
 
-    if (response.data.choices && response.data.choices.length > 0 && response.data.choices[0].message) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ answer: response.data.choices[0].message.content })
-      };
-    } else {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ answer: "No response from the model." })
-      };
+    if (!OPENAI_API_KEY || !ASSISTANT_ID) {
+      return { statusCode: 500, body: JSON.stringify({ error: 'Missing API key or Assistant ID' }) };
     }
+
+    const API_URL = 'https://api.openai.com/v1/threads'; // Correct base URL for Assistants API
+
+    // Create a Thread
+    const threadResponse = await axios.post(
+      API_URL,
+      {}, // Empty body for thread creation
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
+    );
+    const threadId = threadResponse.data.id;
+    if (!threadId) {
+      throw new Error("Failed to retrieve thread ID");
+    }
+
+    const MESSAGES_API_URL = `https://api.openai.com/v1/threads/${threadId}/messages`; // URL for messages in a thread
+
+    // Create a Message in the Thread
+    await axios.post(
+      MESSAGES_API_URL,
+      { role: 'user', content: user_message },
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
+    );
+
+    const RUNS_API_URL = `https://api.openai.com/v1/threads/${threadId}/runs`; // URL for runs in a thread
+
+    // Create a Run
+    const runResponse = await axios.post(
+      RUNS_API_URL,
+      { assistant_id: ASSISTANT_ID }, // Removed model: "gpt-4o-mini" - Assistant's model should be configured in OpenAI
+      { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', 'OpenAI-Beta': 'assistants=v2' } } // Include beta header
+    );
+
+
+    return { statusCode: 200, body: JSON.stringify(runResponse.data) };
+
   } catch (error) {
-    console.error('Error during API call:', error);
-    if (error.response) {
-      console.error("Status Code:", error.response.status);
-      console.error("Data:", error.response.data);
-      console.error("Headers:", error.response.headers);
-    } else if (error.request) {
-      console.error("Request:", error.request);
-    } else {
-      console.error('Error message:', error.message);
-    }
+    console.error('Error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "An error occurred while processing your request." })
+      body: JSON.stringify({ error: 'Internal Server Error', details: error.message })
     };
   }
 };
