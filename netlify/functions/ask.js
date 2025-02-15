@@ -1,51 +1,70 @@
-import OpenAI from "openai";
+const axios = require('axios');
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY, // Securely stored in Netlify
-});
-
-export async function handler(event) {
+exports.handler = async (event) => {
     try {
-        const body = JSON.parse(event.body);
-        const userMessage = body.message;
+        // Ensure only POST requests are allowed
+        if (event.httpMethod !== 'POST') {
+            return {
+                statusCode: 405,
+                body: JSON.stringify({ error: 'Method Not Allowed' })
+            };
+        }
 
-        // Create a thread
-        const thread = await openai.beta.threads.create();
+        // Parse user input from the request body
+        const { user_message } = JSON.parse(event.body);
+        if (!user_message) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: 'User message is required' })
+            };
+        }
 
-        // Send user message to the assistant
-        await openai.beta.threads.messages.create(thread.id, {
-            role: "user",
-            content: userMessage,
-        });
+        // Load API key and Assistant ID from environment variables
+        const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+        const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
+        if (!OPENAI_API_KEY || !ASSISTANT_ID) {
+            return {
+                statusCode: 500,
+                body: JSON.stringify({ error: 'Missing API key or Assistant ID' })
+            };
+        }
 
-        // Start a run for the assistant
-        const run = await openai.beta.threads.runs.create(thread.id, {
-            assistant_id: "vs_67ad93c884b481919ad3942b9d837d54", // Your Assistant ID
-        });
+        // OpenAI API endpoint for Assistant v2 beta
+        const API_URL = 'https://api.openai.com/v2/beta/threads';
 
-        // Wait for the assistant to process the request
-        let runStatus;
-        do {
-            runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-            if (runStatus.status === "completed") break;
-            await new Promise((resolve) => setTimeout(resolve, 2000)); // Poll every 2 seconds
-        } while (runStatus.status !== "completed");
+        // Step 1: Create a thread
+        const threadResponse = await axios.post(
+            API_URL,
+            {},
+            { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
+        );
 
-        // Retrieve the assistant’s response
-        const messages = await openai.beta.threads.messages.list(thread.id);
-        const lastMessage = messages.data.find((msg) => msg.role === "assistant");
+        const threadId = threadResponse.data.id;
 
+        // Step 2: Add user message to thread
+        await axios.post(
+            `${API_URL}/${threadId}/messages`,
+            { role: 'user', content: user_message },
+            { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
+        );
+
+        // Step 3: Run Assistant on the thread
+        const runResponse = await axios.post(
+            `${API_URL}/${threadId}/runs`,
+            { assistant_id: ASSISTANT_ID },
+            { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` } }
+        );
+
+        // Return the response from OpenAI
         return {
             statusCode: 200,
-            body: JSON.stringify({ response: lastMessage?.content[0]?.text?.value || "No response" }),
+            body: JSON.stringify(runResponse.data)
         };
     } catch (error) {
-        console.error("Error in OpenAI API call:", error);
+        console.error('Error:', error);
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "An error occurred while processing your request." }),
+            body: JSON.stringify({ error: 'Internal Server Error', details: error.message })
         };
     }
-}
-
- 
+};
